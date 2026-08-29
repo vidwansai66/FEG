@@ -1,5 +1,66 @@
 import { UserIntentSchema, UserIntent } from './schemas.js';
 import { SYSTEM_PROMPT_INTENT_EXTRACTION } from './prompts.js';
+import { createDraftSlip, updateDraftSlip, validateDraftSlip, BackendSlipLeg } from './backendClient.js';
+
+export async function syncWithMember4(
+  sessionId: string, 
+  intent: UserIntent, 
+  legs: ProcessedLeg[], 
+  odds: ResolvedOdds[], 
+  activeSlipId?: string
+): Promise<OrchestrationResult> {
+  const backendLegs: BackendSlipLeg[] = legs.map((leg, i) => {
+    const odd = odds.find(o => o.selectionId === leg.selection.id);
+    if (!odd) throw new Error(`Missing odds for selection: ${leg.selection.id}`);
+    return {
+      eventId: leg.event.eventId,
+      marketId: leg.market.marketId,
+      selectionId: leg.selection.id,
+      acceptedOdds: odd.decimalOdds,
+      oddsTimestamp: new Date().toISOString(), // Member 3 odd's timestamp if it had one, else now
+      eventLabel: leg.event.homeTeam ? `${leg.event.homeTeam} vs ${leg.event.awayTeam}` : (leg.event.label || leg.event.eventId),
+      marketLabel: leg.market.name,
+      selectionLabel: leg.selection.label
+    };
+  });
+
+  const stake = intent.stake ?? 0;
+  let slipId = activeSlipId;
+
+  try {
+    if (slipId) {
+      await updateDraftSlip(slipId, { stake, legs: backendLegs });
+    } else {
+      const created = await createDraftSlip({ sessionId, stake, legs: backendLegs });
+      slipId = created.id;
+    }
+  } catch (err: any) {
+    return { status: "TOOL_ERROR", message: `Member 4 sync failed: ${err.message}` };
+  }
+
+  // Validate
+  try {
+    const valRes = await validateDraftSlip(slipId!);
+    if (!valRes.ok) {
+      return { status: "INVALID_SLIP", slipId: slipId!, issues: valRes.error?.issues || valRes.error || [] };
+    }
+    if (valRes.data.status === "INVALID") {
+      return { status: "INVALID_SLIP", slipId: slipId!, issues: valRes.data.issues || [] };
+    }
+    return {
+      status: "CONFIRMATION_REQUIRED",
+      slipId: slipId!,
+      draft: {
+        ...(intent.stake !== undefined ? { stake: intent.stake } : {}),
+        legs,
+        odds
+      },
+      totalOdds: valRes.data.totalOdds
+    };
+  } catch (err: any) {
+    return { status: "TOOL_ERROR", message: `Member 4 validation failed: ${err.message}` };
+  }
+}
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -322,7 +383,8 @@ export type OrchestrationResult =
   | { status: "NEEDS_CLARIFICATION"; legIndex: number; step: "event" | "market" | "selection"; candidates: ClarificationCandidate[]; cachedLegs: PartialLeg[] }
   | { status: "TOOL_ERROR"; legIndex?: number; step?: "event" | "market" | "selection" | "odds"; message: string; isTimeout?: boolean }
   | { status: "ODDS_FAILED"; message: string }
-  | { status: "CONFIRMATION_REQUIRED"; draft: { stake?: number; legs: ProcessedLeg[]; odds: ResolvedOdds[] } }
+  | { status: "CONFIRMATION_REQUIRED"; slipId: string; totalOdds: number; draft: { stake?: number; legs: ProcessedLeg[]; odds: ResolvedOdds[] } }
+  | { status: "INVALID_SLIP"; slipId: string; issues: any[] }
   | { status: "CLARIFICATION_ERROR"; message: string }
   | { status: "EDIT_ERROR"; message: string };
 
@@ -487,7 +549,10 @@ export async function processUserMessage(
          cachedLegs: result.cachedLegs
        });
     } else if (result.status === "SUCCESS") {
-       setActiveIntent(sessionId, originalIntent, result.legs, result);
+       const finalResult = await syncWithMember4(sessionId, originalIntent, result.legs, result.odds, session.activeSlipId);
+       if ("slipId" in finalResult) session.activeSlipId = finalResult.slipId;
+       setActiveIntent(sessionId, originalIntent, result.legs, finalResult);
+       return finalResult;
     }
 
     return result;
@@ -510,7 +575,10 @@ export async function processUserMessage(
        cachedLegs: result.cachedLegs
      });
   } else if (result.status === "SUCCESS") {
-     setActiveIntent(sessionId, intent, result.legs, result);
+     const finalResult = await syncWithMember4(sessionId, intent, result.legs, result.odds, session.activeSlipId);
+     if ("slipId" in finalResult) session.activeSlipId = finalResult.slipId;
+     setActiveIntent(sessionId, intent, result.legs, finalResult);
+     return finalResult;
   }
 
   return result;
@@ -529,20 +597,13 @@ export type ConfirmIntent = { action: "confirm_slip" };
 
 export async function processConfirmIntent(sessionId: string): Promise<OrchestrationResult> {
   const session = getSession(sessionId);
-  if (!session.activeIntent || !session.activeLegs || !session.lastResult || session.lastResult.status !== "SUCCESS") {
+  if (!session.activeIntent || !session.activeLegs || !session.lastResult || session.lastResult.status !== "CONFIRMATION_REQUIRED") {
     return { status: "EDIT_ERROR", message: "No active bet slip to confirm." };
   }
 
   // Safety Boundary: We do NOT submit to the backend. We strictly return CONFIRMATION_REQUIRED 
   // with the finalized structured data so the frontend can display the physical "Place Bet" button.
-  return {
-    status: "CONFIRMATION_REQUIRED",
-    draft: {
-      stake: session.lastResult.stake,
-      legs: session.lastResult.legs,
-      odds: session.lastResult.odds
-    }
-  };
+  return session.lastResult as OrchestrationResult;
 }
 
 /**
@@ -553,7 +614,7 @@ export async function processEditIntent(
   edit: EditIntent
 ): Promise<OrchestrationResult | { status: "EDIT_ERROR"; message: string }> {
   const session = getSession(sessionId);
-  if (!session.activeIntent || !session.activeLegs || !session.lastResult || session.lastResult.status !== "SUCCESS") {
+  if (!session.activeIntent || !session.activeLegs || !session.lastResult || (session.lastResult.status !== "SUCCESS" && session.lastResult.status !== "CONFIRMATION_REQUIRED")) {
     return { status: "EDIT_ERROR", message: "No active bet slip to edit." };
   }
 
@@ -563,9 +624,16 @@ export async function processEditIntent(
 
   if (edit.action === "edit_stake") {
     newIntent.stake = edit.stake;
-    const patchedResult = { ...session.lastResult, stake: edit.stake };
-    setActiveIntent(sessionId, newIntent, newCachedLegs, patchedResult);
-    return patchedResult;
+    const finalResult = await syncWithMember4(
+      sessionId, 
+      newIntent, 
+      session.lastResult.draft?.legs || session.lastResult.legs, 
+      session.lastResult.draft?.odds || session.lastResult.odds, 
+      session.activeSlipId
+    );
+    if ("slipId" in finalResult) session.activeSlipId = finalResult.slipId;
+    setActiveIntent(sessionId, newIntent, newCachedLegs, finalResult);
+    return finalResult;
   }
 
   if (edit.action === "remove_leg") {
@@ -590,7 +658,10 @@ export async function processEditIntent(
     // Re-run to strictly resolve odds for remaining
     const result = await processUserIntent(newIntent, newCachedLegs);
     if (result.status === "SUCCESS") {
-      setActiveIntent(sessionId, newIntent, result.legs, result);
+      const finalResult = await syncWithMember4(sessionId, newIntent, result.legs, result.odds, session.activeSlipId);
+      if ("slipId" in finalResult) session.activeSlipId = finalResult.slipId;
+      setActiveIntent(sessionId, newIntent, result.legs, finalResult);
+      return finalResult;
     }
     return result;
   }
@@ -619,7 +690,10 @@ export async function processEditIntent(
 
     const result = await processUserIntent(newIntent, newCachedLegs);
     if (result.status === "SUCCESS") {
-      setActiveIntent(sessionId, newIntent, result.legs, result);
+      const finalResult = await syncWithMember4(sessionId, newIntent, result.legs, result.odds, session.activeSlipId);
+      if ("slipId" in finalResult) session.activeSlipId = finalResult.slipId;
+      setActiveIntent(sessionId, newIntent, result.legs, finalResult);
+      return finalResult;
     }
     return result;
   }

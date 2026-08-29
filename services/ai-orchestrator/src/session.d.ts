@@ -14,6 +14,7 @@ export type SessionState = {
     activeIntent?: UserIntent;
     activeLegs?: PartialLeg[];
     lastResult?: any;
+    activeSlipId?: string;
 };
 export declare function getSession(sessionId: string): SessionState;
 export declare function setPendingClarification(sessionId: string, clarification: PendingClarification): void;

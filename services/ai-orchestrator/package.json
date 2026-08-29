@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run --exclude src/integration.test.ts",
-    "test:integration": "vitest run src/integration.test.ts",
+    "test": "vitest run --exclude src/integration.test.ts --exclude src/integration-member4.test.ts --exclude \"src/**/*.js\"",
+    "test:integration": "vitest run src/integration-member4.test.ts --exclude \"src/**/*.js\"",
     "typecheck": "tsc --noEmit",
     "build": "tsc"
   },

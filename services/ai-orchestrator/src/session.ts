@@ -17,6 +17,7 @@ export type SessionState = {
   activeIntent?: UserIntent;
   activeLegs?: PartialLeg[];
   lastResult?: any; // We'll type this in agent.ts to avoid circular imports, or just use any for this internal piece
+  activeSlipId?: string; // Tracks the Member 4 draft slip ID
 };
 
 const sessions: Record<string, SessionState> = {};

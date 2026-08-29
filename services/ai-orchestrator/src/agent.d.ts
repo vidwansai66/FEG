@@ -1,4 +1,5 @@
 import { UserIntent } from './schemas.js';
+export declare function syncWithMember4(sessionId: string, intent: UserIntent, legs: ProcessedLeg[], odds: ResolvedOdds[], activeSlipId?: string): Promise<OrchestrationResult>;
 /**
  * Extracts a structured UserIntent from a natural language query using OpenRouter.
  * @param userInput The natural language query (e.g., "50 bucks on Arsenal and BTTS in the Madrid game")
@@ -114,11 +115,17 @@ export type OrchestrationResult = {
     message: string;
 } | {
     status: "CONFIRMATION_REQUIRED";
+    slipId: string;
+    totalOdds: number;
     draft: {
         stake?: number;
         legs: ProcessedLeg[];
         odds: ResolvedOdds[];
     };
+} | {
+    status: "INVALID_SLIP";
+    slipId: string;
+    issues: any[];
 } | {
     status: "CLARIFICATION_ERROR";
     message: string;
