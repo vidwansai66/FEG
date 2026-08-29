@@ -69,10 +69,10 @@ export async function extractUserIntent(userInput: string): Promise<UserIntent> 
 // ===========================================================================
 // ORCHESTRATION: STEP 1 (EVENT RESOLUTION)
 // ===========================================================================
-import { mockSearchEvents, mockSearchMarkets, mockResolveSelection, mockGetCurrentOdds } from "./mockTools.js"; // Using .js for ES Module resolution
+import { searchEvents, searchMarkets, resolveSelection, getCurrentOdds } from "./sportsClient.js"; // Real HTTP client to Member 3
 import { getSession, setPendingClarification, clearPendingClarification, setActiveIntent, PartialLeg } from "./session.js";
 
-export type ResolvedEvent = Awaited<ReturnType<typeof mockSearchEvents>>[number];
+export type ResolvedEvent = Awaited<ReturnType<typeof searchEvents>>[number];
 
 type ToolExecutionOptions = {
   maxRetries?: number;
@@ -131,7 +131,7 @@ export async function resolveEventIntent(query: string): Promise<EventResolution
   try {
     events = await executeTool(
       "search_events",
-      () => mockSearchEvents({ query }),
+      () => searchEvents({ query }),
       (res) => Array.isArray(res) && (res.length === 0 || "eventId" in res[0]),
       { timeoutMs: 1000, maxRetries: 1 }
     );
@@ -165,7 +165,7 @@ export async function resolveEventIntent(query: string): Promise<EventResolution
 // ORCHESTRATION: STEP 2 (MARKET RESOLUTION)
 // ===========================================================================
 
-export type ResolvedMarket = Awaited<ReturnType<typeof mockSearchMarkets>>[number];
+export type ResolvedMarket = Awaited<ReturnType<typeof searchMarkets>>[number];
 
 export type MarketResolutionResult = 
   | { status: "SUCCESS"; market: ResolvedMarket }
@@ -181,7 +181,7 @@ export async function resolveMarketIntent(eventId: string, marketQuery: string):
   try {
     markets = await executeTool(
       "search_markets",
-      () => mockSearchMarkets({ eventId, query: marketQuery }),
+      () => searchMarkets({ eventId, query: marketQuery }),
       (res) => Array.isArray(res) && (res.length === 0 || "marketId" in res[0]),
       { timeoutMs: 1000, maxRetries: 1 }
     );
@@ -214,7 +214,7 @@ export async function resolveMarketIntent(eventId: string, marketQuery: string):
 // ORCHESTRATION: STEP 3 (SELECTION RESOLUTION)
 // ===========================================================================
 
-export type ResolvedSelectionCandidate = Awaited<ReturnType<typeof mockResolveSelection>>["candidates"][number];
+export type ResolvedSelectionCandidate = Awaited<ReturnType<typeof resolveSelection>>["candidates"][number];
 
 export type SelectionResolutionResult = 
   | { status: "SUCCESS"; selection: ResolvedSelectionCandidate }
@@ -226,11 +226,11 @@ export type SelectionResolutionResult =
  * Executes the third orchestration step: resolving a selectionQuery given verified eventId and marketId.
  */
 export async function resolveSelectionIntent(eventId: string, marketId: string, selectionQuery: string): Promise<SelectionResolutionResult> {
-  let result: Awaited<ReturnType<typeof mockResolveSelection>>;
+  let result: Awaited<ReturnType<typeof resolveSelection>>;
   try {
     result = await executeTool(
       "resolve_selection",
-      () => mockResolveSelection({ marketId, selectionQuery }),
+      () => resolveSelection({ eventId, marketId, selectionQuery }),
       (res) => typeof res === "object" && res !== null && Array.isArray((res as any).candidates),
       { timeoutMs: 1000, maxRetries: 1 }
     );
@@ -265,7 +265,7 @@ export async function resolveSelectionIntent(eventId: string, marketId: string, 
 // ORCHESTRATION: STEP 4 (ODDS RESOLUTION)
 // ===========================================================================
 
-export type ResolvedOdds = Awaited<ReturnType<typeof mockGetCurrentOdds>>[number];
+export type ResolvedOdds = Awaited<ReturnType<typeof getCurrentOdds>>[number];
 
 export type OddsResolutionResult = 
   | { status: "SUCCESS"; odds: ResolvedOdds[] }
@@ -286,7 +286,7 @@ export async function resolveOddsIntent(selectionIds: string[]): Promise<OddsRes
   try {
     const oddsResult = await executeTool(
       "get_current_odds",
-      () => mockGetCurrentOdds({ selectionIds }),
+      () => getCurrentOdds({ selectionIds }),
       (res) => Array.isArray(res) && (res.length === 0 || "decimalOdds" in res[0]),
       { timeoutMs: 1000, maxRetries: 1 }
     );

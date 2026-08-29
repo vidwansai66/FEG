@@ -5,9 +5,9 @@ import { UserIntent } from './schemas.js';
  * @returns A validated UserIntent object conforming strictly to UserIntentSchema
  */
 export declare function extractUserIntent(userInput: string): Promise<UserIntent>;
-import { mockSearchEvents, mockSearchMarkets, mockResolveSelection, mockGetCurrentOdds } from "./mockTools.js";
+import { searchEvents, searchMarkets, resolveSelection, getCurrentOdds } from "./sportsClient.js";
 import { PartialLeg } from "./session.js";
-export type ResolvedEvent = Awaited<ReturnType<typeof mockSearchEvents>>[number];
+export type ResolvedEvent = Awaited<ReturnType<typeof searchEvents>>[number];
 export type EventResolutionResult = {
     status: "SUCCESS";
     event: ResolvedEvent;
@@ -26,7 +26,7 @@ export type EventResolutionResult = {
  * Executes the first orchestration step: resolving an eventQuery to a verified eventId.
  */
 export declare function resolveEventIntent(query: string): Promise<EventResolutionResult>;
-export type ResolvedMarket = Awaited<ReturnType<typeof mockSearchMarkets>>[number];
+export type ResolvedMarket = Awaited<ReturnType<typeof searchMarkets>>[number];
 export type MarketResolutionResult = {
     status: "SUCCESS";
     market: ResolvedMarket;
@@ -45,7 +45,7 @@ export type MarketResolutionResult = {
  * Executes the second orchestration step: resolving a marketQuery given a verified eventId.
  */
 export declare function resolveMarketIntent(eventId: string, marketQuery: string): Promise<MarketResolutionResult>;
-export type ResolvedSelectionCandidate = Awaited<ReturnType<typeof mockResolveSelection>>["candidates"][number];
+export type ResolvedSelectionCandidate = Awaited<ReturnType<typeof resolveSelection>>["candidates"][number];
 export type SelectionResolutionResult = {
     status: "SUCCESS";
     selection: ResolvedSelectionCandidate;
@@ -64,7 +64,7 @@ export type SelectionResolutionResult = {
  * Executes the third orchestration step: resolving a selectionQuery given verified eventId and marketId.
  */
 export declare function resolveSelectionIntent(eventId: string, marketId: string, selectionQuery: string): Promise<SelectionResolutionResult>;
-export type ResolvedOdds = Awaited<ReturnType<typeof mockGetCurrentOdds>>[number];
+export type ResolvedOdds = Awaited<ReturnType<typeof getCurrentOdds>>[number];
 export type OddsResolutionResult = {
     status: "SUCCESS";
     odds: ResolvedOdds[];

@@ -57,7 +57,7 @@ export async function extractUserIntent(userInput) {
 // ===========================================================================
 // ORCHESTRATION: STEP 1 (EVENT RESOLUTION)
 // ===========================================================================
-import { mockSearchEvents, mockSearchMarkets, mockResolveSelection, mockGetCurrentOdds } from "./mockTools.js"; // Using .js for ES Module resolution
+import { searchEvents, searchMarkets, resolveSelection, getCurrentOdds } from "./sportsClient.js"; // Real HTTP client to Member 3
 import { getSession, setPendingClarification, clearPendingClarification, setActiveIntent } from "./session.js";
 async function executeTool(operationName, operation, validator, options = {}) {
     const maxRetries = options.maxRetries ?? 1;
@@ -97,7 +97,7 @@ async function executeTool(operationName, operation, validator, options = {}) {
 export async function resolveEventIntent(query) {
     let events;
     try {
-        events = await executeTool("search_events", () => mockSearchEvents({ query }), (res) => Array.isArray(res) && (res.length === 0 || "eventId" in res[0]), { timeoutMs: 1000, maxRetries: 1 });
+        events = await executeTool("search_events", () => searchEvents({ query }), (res) => Array.isArray(res) && (res.length === 0 || "eventId" in res[0]), { timeoutMs: 1000, maxRetries: 1 });
     }
     catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -127,7 +127,7 @@ export async function resolveEventIntent(query) {
 export async function resolveMarketIntent(eventId, marketQuery) {
     let markets;
     try {
-        markets = await executeTool("search_markets", () => mockSearchMarkets({ eventId, query: marketQuery }), (res) => Array.isArray(res) && (res.length === 0 || "marketId" in res[0]), { timeoutMs: 1000, maxRetries: 1 });
+        markets = await executeTool("search_markets", () => searchMarkets({ eventId, query: marketQuery }), (res) => Array.isArray(res) && (res.length === 0 || "marketId" in res[0]), { timeoutMs: 1000, maxRetries: 1 });
     }
     catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -156,7 +156,7 @@ export async function resolveMarketIntent(eventId, marketQuery) {
 export async function resolveSelectionIntent(eventId, marketId, selectionQuery) {
     let result;
     try {
-        result = await executeTool("resolve_selection", () => mockResolveSelection({ marketId, selectionQuery }), (res) => typeof res === "object" && res !== null && Array.isArray(res.candidates), { timeoutMs: 1000, maxRetries: 1 });
+        result = await executeTool("resolve_selection", () => resolveSelection({ eventId, marketId, selectionQuery }), (res) => typeof res === "object" && res !== null && Array.isArray(res.candidates), { timeoutMs: 1000, maxRetries: 1 });
     }
     catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -191,7 +191,7 @@ export async function resolveOddsIntent(selectionIds) {
         };
     }
     try {
-        const oddsResult = await executeTool("get_current_odds", () => mockGetCurrentOdds({ selectionIds }), (res) => Array.isArray(res) && (res.length === 0 || "decimalOdds" in res[0]), { timeoutMs: 1000, maxRetries: 1 });
+        const oddsResult = await executeTool("get_current_odds", () => getCurrentOdds({ selectionIds }), (res) => Array.isArray(res) && (res.length === 0 || "decimalOdds" in res[0]), { timeoutMs: 1000, maxRetries: 1 });
         return {
             status: "SUCCESS",
             odds: oddsResult
